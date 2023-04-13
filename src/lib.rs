@@ -3,36 +3,38 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub mod atomic;
 pub mod pooled;
 
-/// The `SnowflakeIdGen` type is snowflake algorithm wrapper.
+/// A unsynchronized snowflake generator
 #[derive(Copy, Clone, Debug)]
 pub struct SnowflakeIdGen {
-    /// epoch used by the snowflake algorithm.
+    /// Epoch used to offset unix time, allows us to use less
+    /// bits by not storing time where no ids will be made
     epoch: SystemTime,
 
-    /// last_time_millis, last time generate id is used times millis.
+    /// The last time a ID was generated in milliseconds
     last_time_millis: i64,
 
-    /// instance, is use to supplement id machine or sectionalization attribute.
-    pub instance: i32,
+    /// Identifies a unique generator in the id which
+    /// allows for multiple generators to be used
+    pub worker_id: i32,
 
-    /// auto-increment record.
-    idx: u16,
+    /// Auto-incremented for every ID generated in the same millisecond
+    sequence: u16,
 }
 
 impl SnowflakeIdGen {
-    pub fn new(instance: i32) -> SnowflakeIdGen {
-        Self::with_epoch(instance, UNIX_EPOCH)
+    pub fn new(worker_id: i32) -> SnowflakeIdGen {
+        Self::with_epoch(worker_id, UNIX_EPOCH)
     }
 
-    pub fn with_epoch(instance: i32, epoch: SystemTime) -> SnowflakeIdGen {
+    pub fn with_epoch(worker_id: i32, epoch: SystemTime) -> SnowflakeIdGen {
         //TODO:limit the maximum of input args machine_id and node_id
         let last_time_millis = get_time_millis(epoch);
 
         SnowflakeIdGen {
             epoch,
             last_time_millis,
-            instance,
-            idx: 0,
+            worker_id,
+            sequence: 0,
         }
     }
 
@@ -40,24 +42,25 @@ impl SnowflakeIdGen {
         self.generate_with_millis_fn(get_time_millis)
     }
 
-    fn generate_with_millis_fn<F>(&mut self, f: F) -> Option<i64>
+    #[inline(always)]
+    fn generate_with_millis_fn<F>(&mut self, time_gen: F) -> Option<i64>
     where
         F: Fn(SystemTime) -> i64,
     {
-        let now_millis = f(self.epoch);
+        let now_millis = time_gen(self.epoch);
 
         if now_millis == self.last_time_millis {
-            if self.idx >= 4095 {
+            if self.sequence >= 4095 {
                 return None;
             }
         } else {
             self.last_time_millis = now_millis;
-            self.idx = 0;
+            self.sequence = 0;
         }
 
-        self.idx += 1;
+        self.sequence += 1;
 
-        Some(self.last_time_millis << 22 | ((self.instance << 12) as i64) | (self.idx as i64))
+        Some(self.last_time_millis << 22 | ((self.worker_id << 17) as i64) | (self.sequence as i64))
     }
 }
 

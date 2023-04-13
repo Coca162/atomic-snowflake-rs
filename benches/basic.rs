@@ -11,7 +11,7 @@ const IDS_PER_THREAD: usize = 2_000;
 fn bench_pools(c: &mut Criterion) {
     let generator_atomic = Arc::new(snowflake::atomic::SnowflakeIdGen::new(0));
     let generator_mutex = Arc::new(Mutex::new(snowflake::SnowflakeIdGen::new(0)));
-    let generator_pool = Arc::new(snowflake::pooled::SnowflakeIdGen::new());
+    let generator_pool = Arc::new(snowflake::pooled::SnowflakeIdGen::new(0));
 
     let mut group = c.benchmark_group("Snowflakes");
     group.significance_level(0.02);

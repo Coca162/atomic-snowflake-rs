@@ -2,26 +2,47 @@ use crate::atomic::SnowflakeIdGen as AtomicSnowflakeIdGen;
 use std::{
     convert::TryInto,
     sync::atomic::{AtomicUsize, Ordering},
+    time::{SystemTime, UNIX_EPOCH}
 };
 
+/// A pooled version of the atomic SnowflakeIdGe.
+/// Uses 5 out of the 10 instance bits to identify
+/// the multiple generators and represents the left
+/// over 5 as the `machine_id`
 #[derive(Debug)]
 pub struct SnowflakeIdGen {
-    pub list: [AtomicSnowflakeIdGen; 32],
-    pub next: AtomicUsize,
+    /// These are all the generators for a single machine
+    /// we use 5 out of the 10 bits in the instance to uniquely
+    /// identify these (and so that is why there is 32 of them)
+    workers: [AtomicSnowflakeIdGen; 32],
+
+    /// The next instance which will be pulled from the array
+    next: AtomicUsize,
+
+    /// A id which identifies a single machine which is running
+    /// this program using the other 5 bits we left from the
+    /// instance portion of the snowflake
+    pub machine_id: i32
 }
 
 impl SnowflakeIdGen {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        let wtf: [AtomicSnowflakeIdGen; 32] = (0..=31)
-            .map(AtomicSnowflakeIdGen::new)
+    pub fn new(machine_id: i32) -> Self {
+        SnowflakeIdGen::with_epoch(machine_id, UNIX_EPOCH)
+    }
+
+    pub fn with_epoch(machine_id: i32, epoch: SystemTime) -> Self {
+        let workers: [AtomicSnowflakeIdGen; 32] = (0..=31)
+            .map(|worker_id| machine_id << 5 | worker_id)
+            .inspect(|x| println!("{x:b}"))
+            .map(|instance_id| AtomicSnowflakeIdGen::with_epoch(instance_id, epoch))
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
 
         SnowflakeIdGen {
-            list: wtf,
+            workers,
             next: AtomicUsize::default(),
+            machine_id
         }
     }
 
@@ -30,12 +51,13 @@ impl SnowflakeIdGen {
 
         if idx >= 32 {
             self.next.store(0, Ordering::Release);
-            self.list[0].generate()
+            self.workers[0].generate()
         } else {
-            self.list[idx].generate()
+            self.workers[idx].generate()
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,7 +72,7 @@ mod tests {
 
     #[test]
     fn no_duplication_between_multiple_threads() {
-        let generator = Arc::new(SnowflakeIdGen::new());
+        let generator = Arc::new(SnowflakeIdGen::new(0));
 
         let mut result = iter::repeat(generator)
             .enumerate()
@@ -64,6 +86,8 @@ mod tests {
                 vec
             });
 
+        println!("{}", result.len());
+
         result.sort();
         result.dedup();
 
@@ -75,7 +99,7 @@ mod tests {
             .map(|cycle| loop {
                 if let Some(id) = generator.next() {
                     break id;
-                }
+                };
                 println!("Thread {thread} Cycle {cycle}: idx for current time has been filled!");
                 thread::sleep(Duration::from_millis(1));
             })

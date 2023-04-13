@@ -2,32 +2,36 @@ use crate::get_time_millis;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// The `SnowflakeIdGen` type is snowflake algorithm wrapper.
+/// A atomic snowflake id generator
 #[derive(Debug)]
 pub struct SnowflakeIdGen {
-    /// epoch used by the snowflake algorithm.
+    /// Epoch used to offset unix time, allows us to use less
+    /// bits by not storing time where no ids will be made
     epoch: SystemTime,
 
-    /// last_time_millis, last time generate id is used times millis.
-    last_millis_idx: AtomicI64,
+    /// A atomic which stores a partial ID with the
+    /// timestamp and the sequence, combining these
+    /// two makes dealing with atomics less painful
+    last_partial_id: AtomicI64,
 
-    /// instance, is use to supplement id machine or sectionalization attribute.
-    pub instance: i32,
+    /// Identifies a unique generator in the id
+    /// allowing for multiple generators to be used
+    pub worker_id: i32,
 }
 
 impl SnowflakeIdGen {
-    pub fn new(instance: i32) -> SnowflakeIdGen {
-        Self::with_epoch(instance, UNIX_EPOCH)
+    pub fn new(worker_id: i32) -> SnowflakeIdGen {
+        Self::with_epoch(worker_id, UNIX_EPOCH)
     }
 
-    pub fn with_epoch(instance: i32, epoch: SystemTime) -> SnowflakeIdGen {
-        //TODO:limit the maximum of input args machine_id and node_id
-        let last_time_millis = get_time_millis(epoch);
+    pub fn with_epoch(worker_id: i32, epoch: SystemTime) -> SnowflakeIdGen {
+        // TODO:limit the maximum bits of the worker_id
+        let last_partial_id = get_time_millis(epoch) << 22 ;
 
         SnowflakeIdGen {
             epoch,
-            last_millis_idx: AtomicI64::new(last_time_millis << 22),
-            instance,
+            last_partial_id: AtomicI64::new(last_partial_id),
+            worker_id,
         }
     }
 
@@ -35,24 +39,25 @@ impl SnowflakeIdGen {
         self.generate_with_millis_fn(get_time_millis)
     }
 
-    fn generate_with_millis_fn<F>(&self, f: F) -> Option<i64>
+    #[inline(always)]
+    fn generate_with_millis_fn<F>(&self, time_gen: F) -> Option<i64>
     where
         F: Fn(SystemTime) -> i64,
     {
-        let new = self
-            .last_millis_idx
+        let new_partial_id = self
+            .last_partial_id
             .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |prev| {
-                let now_shifted = f(self.epoch) << 22;
+                let timestamp_now_shifted = time_gen(self.epoch) << 22;
 
-                match prev ^ now_shifted {
-                    4096.. => Some(now_shifted),
+                match prev ^ timestamp_now_shifted {
+                    4096.. => Some(timestamp_now_shifted),
                     4095 => None,
-                    _ => Some(((prev & 0xFFF) + 1) | now_shifted),
+                    _ => Some(((prev & 0xFFF) + 1) | timestamp_now_shifted),
                 }
             })
             .ok()?;
 
-        Some(new | ((self.instance << 12) as i64))
+        Some(new_partial_id | ((self.worker_id << 17) as i64))
     }
 }
 
@@ -95,7 +100,7 @@ mod tests {
             .map(|cycle| loop {
                 if let Some(id) = generator.generate() {
                     break id;
-                }
+                };
                 println!("Thread {thread} Cycle {cycle}: idx for current time has been filled!");
                 thread::sleep(Duration::from_millis(1));
             })
