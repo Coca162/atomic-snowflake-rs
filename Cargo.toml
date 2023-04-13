@@ -17,4 +17,11 @@ license = "MIT"
 [lib]
 name = "snowflake"
 
+[[bench]]
+name = "basic"
+harness = false
+
 [dependencies]
+
+[dev-dependencies]
+criterion = "0.4.0"
