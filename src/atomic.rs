@@ -1,22 +1,18 @@
+use crate::get_time_millis;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub mod atomic;
-pub mod pooled;
-
 /// The `SnowflakeIdGen` type is snowflake algorithm wrapper.
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 pub struct SnowflakeIdGen {
     /// epoch used by the snowflake algorithm.
     epoch: SystemTime,
 
     /// last_time_millis, last time generate id is used times millis.
-    last_time_millis: i64,
+    last_millis_idx: AtomicI64,
 
     /// instance, is use to supplement id machine or sectionalization attribute.
     pub instance: i32,
-
-    /// auto-increment record.
-    idx: u16,
 }
 
 impl SnowflakeIdGen {
@@ -30,51 +26,41 @@ impl SnowflakeIdGen {
 
         SnowflakeIdGen {
             epoch,
-            last_time_millis,
+            last_millis_idx: AtomicI64::new(last_time_millis << 22),
             instance,
-            idx: 0,
         }
     }
 
-    pub fn generate(&mut self) -> Option<i64> {
+    pub fn generate(&self) -> Option<i64> {
         self.generate_with_millis_fn(get_time_millis)
     }
 
-    fn generate_with_millis_fn<F>(&mut self, f: F) -> Option<i64>
+    fn generate_with_millis_fn<F>(&self, f: F) -> Option<i64>
     where
         F: Fn(SystemTime) -> i64,
     {
-        let now_millis = f(self.epoch);
+        let new = self
+            .last_millis_idx
+            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |prev| {
+                let now_shifted = f(self.epoch) << 22;
 
-        if now_millis == self.last_time_millis {
-            if self.idx >= 4095 {
-                return None;
-            }
-        } else {
-            self.last_time_millis = now_millis;
-            self.idx = 0;
-        }
+                match prev ^ now_shifted {
+                    4096.. => Some(now_shifted),
+                    4095 => None,
+                    _ => Some(((prev & 0xFFF) + 1) | now_shifted),
+                }
+            })
+            .ok()?;
 
-        self.idx += 1;
-
-        Some(self.last_time_millis << 22 | ((self.instance << 12) as i64) | (self.idx as i64))
+        Some(new | ((self.instance << 12) as i64))
     }
-}
-
-#[inline(always)]
-/// Get the latest milliseconds of the clock.
-pub fn get_time_millis(epoch: SystemTime) -> i64 {
-    SystemTime::now()
-        .duration_since(epoch)
-        .expect("The epoch is later then now")
-        .as_millis() as i64
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::iter;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
 
@@ -84,7 +70,7 @@ mod tests {
 
     #[test]
     fn no_duplication_between_multiple_threads() {
-        let generator = Arc::new(Mutex::new(SnowflakeIdGen::with_epoch(0, SystemTime::now())));
+        let generator = Arc::new(SnowflakeIdGen::with_epoch(0, SystemTime::now()));
 
         let mut result = iter::repeat(generator)
             .enumerate()
@@ -104,16 +90,13 @@ mod tests {
         assert_eq!(TOTAL_IDS, result.len());
     }
 
-    fn generate_many_ids((thread, generator): (usize, Arc<Mutex<SnowflakeIdGen>>)) -> Vec<i64> {
+    fn generate_many_ids((thread, generator): (usize, Arc<SnowflakeIdGen>)) -> Vec<i64> {
         (0..IDS_PER_THREAD)
             .map(|cycle| loop {
-                let mut lock = generator.lock().unwrap();
-
-                if let Some(id) = lock.generate() {
+                if let Some(id) = generator.generate() {
                     break id;
                 }
                 println!("Thread {thread} Cycle {cycle}: idx for current time has been filled!");
-                drop(lock);
                 thread::sleep(Duration::from_millis(1));
             })
             // .inspect(|x| println!("{x:b}"))
@@ -122,7 +105,7 @@ mod tests {
 
     #[test]
     fn fail_after_4095() {
-        let mut generator = SnowflakeIdGen::with_epoch(0, SystemTime::now());
+        let generator = Arc::new(SnowflakeIdGen::with_epoch(0, SystemTime::now()));
 
         for _ in 1..=4095 {
             let id = generator.generate_with_millis_fn(|_| 0);
