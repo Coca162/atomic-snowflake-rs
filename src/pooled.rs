@@ -22,15 +22,15 @@ pub struct SnowflakeIdGen {
     /// A id which identifies a single machine which is running
     /// this program using the other 5 bits we left from the
     /// instance portion of the snowflake
-    pub machine_id: i32
+    pub machine_id: u16
 }
 
 impl SnowflakeIdGen {
-    pub fn new(machine_id: i32) -> Self {
+    pub fn new(machine_id: u16) -> Self {
         SnowflakeIdGen::with_epoch(machine_id, UNIX_EPOCH)
     }
 
-    pub fn with_epoch(machine_id: i32, epoch: SystemTime) -> Self {
+    pub fn with_epoch(machine_id: u16, epoch: SystemTime) -> Self {
         let workers: [AtomicSnowflakeIdGen; 32] = (0..=31)
             .map(|worker_id| machine_id << 5 | worker_id)
             .inspect(|x| println!("{x:b}"))
@@ -46,7 +46,7 @@ impl SnowflakeIdGen {
         }
     }
 
-    pub fn next(&self) -> Option<i64> {
+    pub fn next(&self) -> Option<u64> {
         let idx = self.next.fetch_add(1, Ordering::Relaxed);
 
         if idx >= 32 {
@@ -67,8 +67,8 @@ mod tests {
     use std::time::Duration;
 
     const TOTAL_IDS: usize = IDS_PER_THREAD * THREAD_COUNT;
-    const THREAD_COUNT: usize = 8;
-    const IDS_PER_THREAD: usize = 1_000_000;
+    const THREAD_COUNT: usize = 16;
+    const IDS_PER_THREAD: usize = 2_000;
 
     #[test]
     fn no_duplication_between_multiple_threads() {
@@ -78,7 +78,6 @@ mod tests {
             .enumerate()
             .take(THREAD_COUNT)
             .map(|data| thread::spawn(move || generate_many_ids(data)))
-            // This collect makes it so the we don't go through all the threads one by one!!!
             .collect::<Vec<_>>()
             .into_iter()
             .fold(Vec::with_capacity(TOTAL_IDS), |mut vec, thread| {
@@ -94,7 +93,7 @@ mod tests {
         assert_eq!(TOTAL_IDS, result.len());
     }
 
-    fn generate_many_ids((thread, generator): (usize, Arc<SnowflakeIdGen>)) -> Vec<i64> {
+    fn generate_many_ids((thread, generator): (usize, Arc<SnowflakeIdGen>)) -> Vec<u64> {
         (0..IDS_PER_THREAD)
             .map(|cycle| loop {
                 if let Some(id) = generator.next() {
@@ -103,7 +102,6 @@ mod tests {
                 println!("Thread {thread} Cycle {cycle}: idx for current time has been filled!");
                 thread::sleep(Duration::from_millis(1));
             })
-            // .inspect(|x| println!("{x:b}"))
             .collect::<Vec<_>>()
     }
 }

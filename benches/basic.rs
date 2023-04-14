@@ -30,7 +30,7 @@ fn bench_pools(c: &mut Criterion) {
     group.finish();
 }
 
-fn atomic_snowflake(generator: Arc<snowflake::atomic::SnowflakeIdGen>) -> Vec<i64> {
+fn atomic_snowflake(generator: Arc<snowflake::atomic::SnowflakeIdGen>) -> Vec<u64> {
     iter::repeat(generator)
         .take(THREAD_COUNT)
         .map(|data| thread::spawn(move || atomic_generate_many_ids(data)))
@@ -43,7 +43,7 @@ fn atomic_snowflake(generator: Arc<snowflake::atomic::SnowflakeIdGen>) -> Vec<i6
         })
 }
 
-fn atomic_generate_many_ids(generator: Arc<snowflake::atomic::SnowflakeIdGen>) -> Vec<i64> {
+fn atomic_generate_many_ids(generator: Arc<snowflake::atomic::SnowflakeIdGen>) -> Vec<u64> {
     (0..IDS_PER_THREAD)
         .map(|_| loop {
             if let Some(id) = generator.generate() {
@@ -55,7 +55,7 @@ fn atomic_generate_many_ids(generator: Arc<snowflake::atomic::SnowflakeIdGen>) -
         .collect::<Vec<_>>()
 }
 
-fn mutex_snowflake(generator: Arc<Mutex<snowflake::SnowflakeIdGen>>) -> Vec<i64> {
+fn mutex_snowflake(generator: Arc<Mutex<snowflake::SnowflakeIdGen>>) -> Vec<u64> {
     iter::repeat(generator)
         .take(THREAD_COUNT)
         .map(|data| thread::spawn(move || mutex_generate_many_ids(data)))
@@ -68,7 +68,7 @@ fn mutex_snowflake(generator: Arc<Mutex<snowflake::SnowflakeIdGen>>) -> Vec<i64>
         })
 }
 
-fn mutex_generate_many_ids(generator: Arc<Mutex<snowflake::SnowflakeIdGen>>) -> Vec<i64> {
+fn mutex_generate_many_ids(generator: Arc<Mutex<snowflake::SnowflakeIdGen>>) -> Vec<u64> {
     (0..IDS_PER_THREAD)
         .map(|_| loop {
             let mut lock = generator.lock().unwrap();
@@ -83,7 +83,7 @@ fn mutex_generate_many_ids(generator: Arc<Mutex<snowflake::SnowflakeIdGen>>) -> 
         .collect::<Vec<_>>()
 }
 
-fn pool_atomic_snowflake(generator: Arc<snowflake::pooled::SnowflakeIdGen>) -> Vec<i64> {
+fn pool_atomic_snowflake(generator: Arc<snowflake::pooled::SnowflakeIdGen>) -> Vec<u64> {
     iter::repeat(generator)
         .take(THREAD_COUNT)
         .map(|data| thread::spawn(move || pool_atomic_many_ids(data)))
@@ -96,7 +96,7 @@ fn pool_atomic_snowflake(generator: Arc<snowflake::pooled::SnowflakeIdGen>) -> V
         })
 }
 
-fn pool_atomic_many_ids(generator: Arc<snowflake::pooled::SnowflakeIdGen>) -> Vec<i64> {
+fn pool_atomic_many_ids(generator: Arc<snowflake::pooled::SnowflakeIdGen>) -> Vec<u64> {
     (0..IDS_PER_THREAD)
         .map(|_| loop {
             // println!("wut");

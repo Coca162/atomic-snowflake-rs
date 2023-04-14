@@ -11,22 +11,22 @@ pub struct SnowflakeIdGen {
     epoch: SystemTime,
 
     /// The last time a ID was generated in milliseconds
-    last_time_millis: i64,
+    last_time_millis: u64,
 
     /// Identifies a unique generator in the id which
     /// allows for multiple generators to be used
-    pub worker_id: i32,
+    pub worker_id: u16,
 
     /// Auto-incremented for every ID generated in the same millisecond
     sequence: u16,
 }
 
 impl SnowflakeIdGen {
-    pub fn new(worker_id: i32) -> SnowflakeIdGen {
+    pub fn new(worker_id: u16) -> SnowflakeIdGen {
         Self::with_epoch(worker_id, UNIX_EPOCH)
     }
 
-    pub fn with_epoch(worker_id: i32, epoch: SystemTime) -> SnowflakeIdGen {
+    pub fn with_epoch(worker_id: u16, epoch: SystemTime) -> SnowflakeIdGen {
         //TODO:limit the maximum of input args machine_id and node_id
         let last_time_millis = get_time_millis(epoch);
 
@@ -38,14 +38,14 @@ impl SnowflakeIdGen {
         }
     }
 
-    pub fn generate(&mut self) -> Option<i64> {
+    pub fn generate(&mut self) -> Option<u64> {
         self.generate_with_millis_fn(get_time_millis)
     }
 
     #[inline(always)]
-    fn generate_with_millis_fn<F>(&mut self, time_gen: F) -> Option<i64>
+    fn generate_with_millis_fn<F>(&mut self, time_gen: F) -> Option<u64>
     where
-        F: Fn(SystemTime) -> i64,
+        F: Fn(SystemTime) -> u64,
     {
         let now_millis = time_gen(self.epoch);
 
@@ -60,17 +60,17 @@ impl SnowflakeIdGen {
 
         self.sequence += 1;
 
-        Some(self.last_time_millis << 22 | ((self.worker_id << 17) as i64) | (self.sequence as i64))
+        Some(self.last_time_millis << 22 | ((self.worker_id as u64) << 17) | (self.sequence as u64))
     }
 }
 
 #[inline(always)]
 /// Get the latest milliseconds of the clock.
-pub fn get_time_millis(epoch: SystemTime) -> i64 {
+pub fn get_time_millis(epoch: SystemTime) -> u64 {
     SystemTime::now()
         .duration_since(epoch)
         .expect("The epoch is later then now")
-        .as_millis() as i64
+        .as_millis() as u64
 }
 
 #[cfg(test)]
@@ -107,7 +107,7 @@ mod tests {
         assert_eq!(TOTAL_IDS, result.len());
     }
 
-    fn generate_many_ids((thread, generator): (usize, Arc<Mutex<SnowflakeIdGen>>)) -> Vec<i64> {
+    fn generate_many_ids((thread, generator): (usize, Arc<Mutex<SnowflakeIdGen>>)) -> Vec<u64> {
         (0..IDS_PER_THREAD)
             .map(|cycle| loop {
                 let mut lock = generator.lock().unwrap();
@@ -119,7 +119,6 @@ mod tests {
                 drop(lock);
                 thread::sleep(Duration::from_millis(1));
             })
-            // .inspect(|x| println!("{x:b}"))
             .collect::<Vec<_>>()
     }
 

@@ -1,5 +1,5 @@
 use crate::get_time_millis;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A atomic snowflake id generator
@@ -12,37 +12,37 @@ pub struct SnowflakeIdGen {
     /// A atomic which stores a partial ID with the
     /// timestamp and the sequence, combining these
     /// two makes dealing with atomics less painful
-    last_partial_id: AtomicI64,
+    last_partial_id: AtomicU64,
 
     /// Identifies a unique generator in the id
     /// allowing for multiple generators to be used
-    pub worker_id: i32,
+    pub worker_id: u16,
 }
 
 impl SnowflakeIdGen {
-    pub fn new(worker_id: i32) -> SnowflakeIdGen {
+    pub fn new(worker_id: u16) -> SnowflakeIdGen {
         Self::with_epoch(worker_id, UNIX_EPOCH)
     }
 
-    pub fn with_epoch(worker_id: i32, epoch: SystemTime) -> SnowflakeIdGen {
+    pub fn with_epoch(worker_id: u16, epoch: SystemTime) -> SnowflakeIdGen {
         // TODO:limit the maximum bits of the worker_id
         let last_partial_id = get_time_millis(epoch) << 22 ;
 
         SnowflakeIdGen {
             epoch,
-            last_partial_id: AtomicI64::new(last_partial_id),
+            last_partial_id: AtomicU64::new(last_partial_id),
             worker_id,
         }
     }
 
-    pub fn generate(&self) -> Option<i64> {
+    pub fn generate(&self) -> Option<u64> {
         self.generate_with_millis_fn(get_time_millis)
     }
 
     #[inline(always)]
-    fn generate_with_millis_fn<F>(&self, time_gen: F) -> Option<i64>
+    fn generate_with_millis_fn<F>(&self, time_gen: F) -> Option<u64>
     where
-        F: Fn(SystemTime) -> i64,
+        F: Fn(SystemTime) -> u64,
     {
         let new_partial_id = self
             .last_partial_id
@@ -57,7 +57,7 @@ impl SnowflakeIdGen {
             })
             .ok()?;
 
-        Some(new_partial_id | ((self.worker_id << 17) as i64))
+        Some(new_partial_id | ((self.worker_id as u64) << 17))
     }
 }
 
@@ -95,7 +95,7 @@ mod tests {
         assert_eq!(TOTAL_IDS, result.len());
     }
 
-    fn generate_many_ids((thread, generator): (usize, Arc<SnowflakeIdGen>)) -> Vec<i64> {
+    fn generate_many_ids((thread, generator): (usize, Arc<SnowflakeIdGen>)) -> Vec<u64> {
         (0..IDS_PER_THREAD)
             .map(|cycle| loop {
                 if let Some(id) = generator.generate() {
@@ -104,14 +104,12 @@ mod tests {
                 println!("Thread {thread} Cycle {cycle}: idx for current time has been filled!");
                 thread::sleep(Duration::from_millis(1));
             })
-            // .inspect(|x| println!("{x:b}"))
             .collect::<Vec<_>>()
     }
 
     #[test]
     fn fail_after_4095() {
         let generator = Arc::new(SnowflakeIdGen::with_epoch(0, SystemTime::now()));
-
         for _ in 1..=4095 {
             let id = generator.generate_with_millis_fn(|_| 0);
             assert!(matches!(id, Some(_)));
