@@ -32,9 +32,8 @@ impl SnowflakeIdGen {
 
     pub fn with_epoch(machine_id: u16, epoch: SystemTime) -> Self {
         let workers: [AtomicSnowflakeIdGen; 32] = (0..=31)
-            .map(|worker_id| machine_id << 5 | worker_id)
-            .inspect(|x| println!("{x:b}"))
-            .map(|instance_id| AtomicSnowflakeIdGen::with_epoch(instance_id, epoch))
+            .map(|instance_id| machine_id | instance_id << 5)
+            .map(|worker_id| AtomicSnowflakeIdGen::with_epoch(worker_id, epoch))
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
