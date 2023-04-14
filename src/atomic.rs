@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn fail_after_4095() {
         let generator = Arc::new(SnowflakeIdGen::with_epoch(0, SystemTime::now()));
-        for _ in 1..=4095 {
+        for _ in 0..4095 {
             let id = generator.generate_with_millis_fn(|_| 0);
             assert!(matches!(id, Some(_)));
         }
