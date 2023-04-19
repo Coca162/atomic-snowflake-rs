@@ -1,8 +1,8 @@
-use crate::atomic::SnowflakeIdGen as AtomicSnowflakeIdGen;
+use crate::SnowflakeIdGen as AtomicSnowflakeIdGen;
 use std::{
     convert::TryInto,
     sync::atomic::{AtomicUsize, Ordering},
-    time::{SystemTime, UNIX_EPOCH}
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 /// A pooled version of the atomic SnowflakeIdGe.
@@ -22,7 +22,7 @@ pub struct SnowflakeIdGen {
     /// A id which identifies a single machine which is running
     /// this program using the other 5 bits we left from the
     /// instance portion of the snowflake
-    pub machine_id: u16
+    pub machine_id: u16,
 }
 
 impl SnowflakeIdGen {
@@ -41,7 +41,7 @@ impl SnowflakeIdGen {
         SnowflakeIdGen {
             workers,
             next: AtomicUsize::default(),
-            machine_id
+            machine_id,
         }
     }
 
