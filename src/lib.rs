@@ -59,7 +59,7 @@ impl SnowflakeIdGen {
             })
             .ok()?;
 
-        Some(new_partial_id | ((self.worker_id as u64) << 17))
+        Some(new_partial_id | ((self.worker_id as u64) << 12))
     }
 }
 

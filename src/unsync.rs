@@ -58,7 +58,7 @@ impl SnowflakeIdGen {
 
         self.sequence += 1;
 
-        Some(self.last_time_millis << 22 | ((self.worker_id as u64) << 17) | (self.sequence as u64))
+        Some(self.last_time_millis << 22 | ((self.worker_id as u64) << 12) | (self.sequence as u64))
     }
 }
 
